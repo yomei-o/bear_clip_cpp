@@ -1,0 +1,77 @@
+{
+ "note": "ゼロショットの候補 10 種類（比較実験で使った「言葉10」）。bear だけが警報の対象",
+ "alarm": "bear",
+ "classes": [
+  [
+   "bear",
+   [
+    "a photo of a bear",
+    "a photo of a black bear walking",
+    "a security camera image of a bear",
+    "a night vision image of a bear"
+   ]
+  ],
+  [
+   "car",
+   [
+    "a photo of a car",
+    "a photo of a parked car at night",
+    "a security camera image of a car"
+   ]
+  ],
+  [
+   "person",
+   [
+    "a photo of a person",
+    "a security camera image of a person walking"
+   ]
+  ],
+  [
+   "dog",
+   [
+    "a photo of a dog",
+    "a security camera image of a dog"
+   ]
+  ],
+  [
+   "cat",
+   [
+    "a photo of a cat"
+   ]
+  ],
+  [
+   "deer",
+   [
+    "a photo of a deer"
+   ]
+  ],
+  [
+   "boar",
+   [
+    "a photo of a wild boar"
+   ]
+  ],
+  [
+   "raccoon",
+   [
+    "a photo of a raccoon"
+   ]
+  ],
+  [
+   "bird",
+   [
+    "a photo of a bird"
+   ]
+  ],
+  [
+   "empty",
+   [
+    "a security camera image of an empty driveway at night",
+    "a photo of an empty room",
+    "a photo of an empty street",
+    "a photo of a forest with no animals",
+    "a photo of grass and trees"
+   ]
+  ]
+ ]
+}

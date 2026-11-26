@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>町の熊チェッカー</title>
+<style>
+:root {
+  --bg: #f4f6f2; --fg: #1d241c; --sub: #5e6a5b; --card: #fff; --line: #dbe2d6;
+  --accent: #2f7d32; --alarm: #d6336c; --bar: #e7ece3; --btn2: #34423a;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121512; --fg: #e8ede6; --sub: #9aa697; --card: #1b201b; --line: #2e372d; --bar: #283026; --accent: #69c06d; --btn2: #3a4a40; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font-family: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", sans-serif; line-height: 1.6; }
+main { max-width: 860px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.6rem; margin: 8px 0 4px; }
+h1 span { color: var(--accent); }
+.lead { color: var(--sub); margin: 0 0 12px; font-size: .95rem; }
+.warn { background: #fff4e5; color: #7a4a00; border-radius: 10px; padding: 8px 12px; font-size: .88rem; margin-bottom: 12px; }
+@media (prefers-color-scheme: dark) { .warn { background: #3a2c12; color: #ffd8a8; } }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+button, label.btn { appearance: none; border: 0; background: var(--btn2); color: #fff; border-radius: 999px;
+  padding: 10px 16px; font-size: .98rem; cursor: pointer; font-family: inherit; font-weight: 600; }
+button.primary, label.primary { background: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+input[type=file] { display: none; }
+.samples-h { font-size: .88rem; color: var(--sub); margin: 14px 0 4px; font-weight: 600; }
+.samples { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+.samples button { padding: 0; border-radius: 10px; overflow: hidden; background: var(--bar); color: var(--fg); text-align: left; }
+.samples img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+.samples span { display: block; padding: 4px 8px; font-size: .8rem; font-weight: 600; }
+#prog { height: 6px; background: var(--bar); border-radius: 3px; overflow: hidden; margin-top: 10px; }
+#prog > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+#status { font-size: .9rem; color: var(--sub); margin-top: 8px; min-height: 1.4em; }
+#stage { position: relative; display: none; }
+#stage.show { display: block; }
+#view { width: 100%; display: block; border-radius: 10px; background: #000; }
+#video { display: none; }
+#verdict { font-size: 1.5rem; font-weight: 800; margin: 10px 0 2px; }
+#verdict.alarm { color: var(--alarm); }
+#detail { color: var(--sub); font-size: .9rem; }
+.slider { margin-top: 12px; }
+.slider label { display: flex; justify-content: space-between; font-size: .92rem; }
+.slider input { width: 100%; }
+#timeline { width: 100%; height: 70px; display: none; margin-top: 10px; border-radius: 8px; background: var(--bar); cursor: pointer; }
+.vctl { display: none; margin-top: 8px; }
+.note { font-size: .84rem; color: var(--sub); }
+.note a { color: inherit; }
+table.res { border-collapse: collapse; font-size: .82rem; width: 100%; margin: 8px 0; }
+table.res td, table.res th { border-bottom: 1px solid var(--line); padding: 3px 6px; text-align: right; }
+table.res td:first-child, table.res th:first-child { text-align: left; }
+</style>
+</head>
+<body>
+<main>
+  <h1>町の<span>熊チェッカー</span></h1>
+  <p class="lead">防犯カメラの映像や写真に熊が写っているかを、AI（CLIP）が探します。画面を小さなタイルに切って 1 枚ずつ見るので、遠くの小さな熊も探せます。写真や映像はこの端末の中だけで処理し、どこにも送りません。</p>
+  <div class="warn">研究・お試し用です。熊がいても鳴らないことも、熊がいなくても鳴ることもあります。安全にかかわる判断（避難・通報など）には使わないでください。</div>
+
+  <div class="card">
+    <div class="row">
+      <label class="btn primary">写真を選ぶ<input type="file" id="filePhoto" accept="image/*"></label>
+      <label class="btn">動画を選ぶ<input type="file" id="fileVideo" accept="video/*"></label>
+      <button id="camBtn">カメラで見張る</button>
+      <button id="stopBtn" disabled>止める</button>
+    </div>
+    <p class="samples-h">サンプルで試す（どれもパブリックドメインの映像です）</p>
+    <div class="samples" id="samples"></div>
+    <div id="prog"><div></div></div>
+    <div id="status">AI モデル（約 97MB）を読み込んでいます…</div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <div id="stage"><canvas id="view"></canvas></div>
+    <video id="video" playsinline muted></video>
+    <canvas id="timeline" width="800" height="70"></canvas>
+    <div class="row vctl" id="vctl"><button id="playBtn">再生</button><span class="note" id="vinfo"></span></div>
+    <div id="verdict"></div>
+    <div id="detail"></div>
+    <div class="slider">
+      <label><span>感度（熊と判定する点数の下限）</span><b id="thv"></b></label>
+      <input type="range" id="th" min="0.5" max="0.95" step="0.05">
+      <span class="note">下げると見逃しが減り、誤報が増えます。初期値 0.7 は、試験で町の画像の誤報が 3% ほどになる値です。</span>
+    </div>
+  </div>
+
+  <div class="card note">
+    <p style="margin-top:0"><b>しくみ</b>：OpenAI の CLIP（ViT-B/32）を C++ で書き直して WebAssembly にしたものです。画面全体と、短辺の 2/3・0.4 倍の正方形タイル（1280×720 なら合計 27 枚）を 1 枚ずつ CLIP に通します。タイルごとに 2 つの点数を出し、その平均で判定します。赤い枠は熊そのものではなく、熊らしいと判定したタイルです。</p>
+    <ul>
+      <li><b>言葉だけの点数</b>：「熊・車・人・犬・猫・鹿・イノシシ・アライグマ・鳥・何もない」の 10 個の言葉のうち、どれに一番近いか（熊の写真を集めて学習しなくても使える）</li>
+      <li><b>学習した層の点数</b>：自動撮影カメラ・観察写真・町の画像のタイル 89,448 枚（熊 7,719 枚）で学習した「熊／熊以外」の小さな層</li>
+    </ul>
+    <p>前回の YOLO の検出器（<a href="https://github.com/yomei-o/bear_det_cpp">bear_det_cpp</a>）は、夜に停めてある黒い車を熊と言い、防犯カメラの歩く熊を見逃していました。同じ試験での比較（感度 0.7、1 コマごと）：</p>
+    <table class="res">
+      <tr><th></th><th>YOLO 2 回目</th><th>この CLIP 版</th></tr>
+      <tr><td>玄関カメラ：歩く熊のコマで鳴った</td><td>3%</td><td>60%</td></tr>
+      <tr><td>玄関カメラ：黒い車だけのコマで鳴った（誤報）</td><td>8%</td><td>0%</td></tr>
+      <tr><td>図書館の熊のコマで鳴った</td><td>16%</td><td>49%</td></tr>
+      <tr><td>日本のニュース映像の熊（31 枚、学習に使っていない）</td><td>—</td><td>100%</td></tr>
+      <tr><td>町の画像（COCO、熊なし）での誤報</td><td>4.1%（熊なし全体）</td><td>2.8%</td></tr>
+      <tr><td>森の自動撮影カメラの熊以外の動物での誤報</td><td>同上</td><td>44%</td></tr>
+    </table>
+    <p>森の自動撮影カメラに写る熊以外の動物（ヤマアラシ・クズリ・サルなど）では、まだ誤報が多いです。動画は 0.5 秒おきに、前のコマから動いた部分のタイルだけを見ます（全部のタイルを見ると、ブラウザでは 1 コマ 10 秒以上かかるため）。サンプル動画の枠は、C++ 版で同じ計算を前もってしたものです。</p>
+    <p style="margin-bottom:0">ソース：<a href="https://github.com/yomei-o/bear_clip_cpp">github.com/yomei-o/bear_clip_cpp</a>（C++ / Python）。サンプル映像：<a href="https://commons.wikimedia.org/wiki/File:Surveillance_camera_captures_bear_in_Franklin_County_for_first_time_in_nearly_20_years.webm">玄関カメラ（PD-CCTV）</a>・<a href="https://commons.wikimedia.org/wiki/File:Bear_inside_Mammoth_Lakes_Library.webm">図書館（Mono County Office of Education、パブリックドメイン）</a>（Wikimedia Commons）</p>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const NW = Math.max(1, Math.min(isMobile ? 2 : 4, (navigator.hardwareConcurrency || 2) - 1));
+let TH = 0.7;
+
+// ---------------- worker の組
+const pool = { ws: [], ready: 0, jobSeq: 0, cur: null, waitViews: new Map(), reqSeq: 0 };
+function status(t) { $("status").textContent = t; }
+function startPool() {
+  for (let i = 0; i < NW; i++) {
+    const w = new Worker("worker.js"); w.idx = i; w.busy = false; pool.ws.push(w);
+    w.onmessage = (e) => onWorker(w, e.data);
+  }
+  pool.ws[0].postMessage({ type: "init", id: 0 });   // 1 つめが落とし終わってから残りを起こす（キャッシュに乗る）
+}
+function onWorker(w, d) {
+  if (d.type === "progress") {
+    $("prog").firstElementChild.style.width = (100 * d.got / d.total).toFixed(1) + "%";
+    status(`AI モデルを読み込んでいます… ${(d.got / 1048576).toFixed(0)} / ${(d.total / 1048576).toFixed(0)} MB`);
+  } else if (d.type === "ready") {
+    pool.ready++;
+    if (w.idx === 0) { TH = Math.round(d.threshold * 100) / 100; $("th").value = TH; $("thv").textContent = TH.toFixed(2); for (let i = 1; i < NW; i++) pool.ws[i].postMessage({ type: "init", id: i }); }
+    if (pool.ready === NW) { $("prog").style.display = "none"; status(`準備できました（並列 ${NW}）。写真・動画を選ぶか、サンプルを押してください。`); }
+    else status(`AI を起動しています… ${pool.ready} / ${NW}`);
+  } else if (d.type === "views") {
+    const r = pool.waitViews.get(d.req); pool.waitViews.delete(d.req); r(d.views);
+  } else if (d.type === "imageSet") {
+    const j = pool.cur; if (!j || j.id !== d.job) return; w.hasImage = j.id; dispatch(w);
+  } else if (d.type === "result") {
+    const j = pool.cur; w.busy = false;
+    if (!j || j.id !== d.job) return;
+    j.res[d.k] = d.r; j.done++; if (j.onProgress) j.onProgress(j.done, j.boxes.length);
+    if (j.done === j.boxes.length) { pool.cur = null; j.resolve(j.res); } else dispatch(w);
+  } else if (d.type === "error") status("エラー: " + d.message);
+}
+function dispatch(w) {
+  const j = pool.cur; if (!j || w.busy || w.hasImage !== j.id || j.next >= j.boxes.length) return;
+  const k = j.next++; w.busy = true;
+  w.postMessage({ type: "eval", job: j.id, k, box: j.boxes[k] });
+}
+function getViews(w, h) {
+  return new Promise((res) => { const req = ++pool.reqSeq; pool.waitViews.set(req, res); pool.ws[0].postMessage({ type: "views", req, w, h }); });
+}
+// 画像 1 枚の、指定したタイルを全部判定する。1 度に 1 つ
+let chain = Promise.resolve();
+function evalBoxes(rgba, w, h, boxes, onProgress) {
+  const run = () => new Promise((resolve) => {
+    if (!boxes.length) { resolve([]); return; }
+    const j = { id: ++pool.jobSeq, boxes, res: new Array(boxes.length), next: 0, done: 0, resolve, onProgress };
+    pool.cur = j;
+    for (const wk of pool.ws) { wk.busy = false; wk.postMessage({ type: "image", job: j.id, rgba: rgba.slice(), w, h }); }
+  });
+  chain = chain.then(run, run); return chain;
+}
+
+// ---------------- 描画
+const view = $("view"), vctx = view.getContext("2d");
+let shown = null;   // { kind:'photo'|'video'|'camera', ... }
+function frameToCanvas(src, sw, sh, maxSide) {
+  const s = Math.min(1, maxSide / Math.max(sw, sh));
+  const w = Math.round(sw * s), h = Math.round(sh * s);
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d", { willReadFrequently: true }); g.imageSmoothingQuality = "high"; g.drawImage(src, 0, 0, w, h);
+  return c;
+}
+function drawBoxes(ctx, sx, sy, items) {   // items: [{box, s}]
+  const hits = items.filter((v) => v.s >= TH).sort((a, b) => a.s - b.s);
+  for (const v of hits) {
+    const [x0, y0, x1, y1] = v.box, lw = Math.max(2, ctx.canvas.width / 300);
+    ctx.lineWidth = lw * (v === hits[hits.length - 1] ? 2 : 1); ctx.strokeStyle = "#ff2d55";
+    ctx.strokeRect(x0 * sx, y0 * sy, (x1 - x0) * sx, (y1 - y0) * sy);
+    ctx.font = `700 ${Math.max(12, ctx.canvas.width / 45)}px system-ui, sans-serif`;
+    const t = "熊 " + v.s.toFixed(2), tw = ctx.measureText(t).width;
+    ctx.fillStyle = "#ff2d55"; ctx.fillRect(x0 * sx, y0 * sy, tw + 10, Math.max(16, ctx.canvas.width / 38));
+    ctx.fillStyle = "#fff"; ctx.textBaseline = "top"; ctx.fillText(t, x0 * sx + 5, y0 * sy + 2);
+  }
+  return hits.length;
+}
+function verdict(maxS, extra) {
+  const v = $("verdict");
+  if (maxS >= TH) { v.textContent = "熊がいるかもしれません"; v.className = "alarm"; }
+  else { v.textContent = "熊は見つかりませんでした"; v.className = ""; }
+  $("detail").textContent = `いちばん高いタイルの点数 ${maxS.toFixed(2)}（感度 ${TH.toFixed(2)}）` + (extra || "");
+}
+function showCard() { $("resultCard").style.display = "block"; $("stage").classList.add("show"); }
+
+// ---------------- 写真
+async function runPhoto(src, sw, sh) {
+  stopAll(); if (pool.ready < NW) { status("モデルの読み込みが終わるまでお待ちください"); return; }
+  const c = frameToCanvas(src, sw, sh, 1280);
+  const rgba = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+  const boxes = await getViews(c.width, c.height);
+  showCard(); $("timeline").style.display = "none"; $("vctl").style.display = "none";
+  view.width = c.width; view.height = c.height; vctx.drawImage(c, 0, 0);
+  $("verdict").textContent = ""; $("detail").textContent = "";
+  const t0 = performance.now();
+  const res = await evalBoxes(rgba, c.width, c.height, boxes, (d, n) => status(`タイルを判定しています… ${d} / ${n}`));
+  const items = boxes.map((b, k) => ({ box: b, s: res[k].s, zs: res[k].zs, probe: res[k].probe }));
+  shown = { kind: "photo", canvas: c, items };
+  status(`判定しました（タイル ${boxes.length} 枚、${((performance.now() - t0) / 1000).toFixed(1)} 秒）`);
+  renderPhoto();
+}
+function renderPhoto() {
+  const { canvas, items } = shown; vctx.drawImage(canvas, 0, 0);
+  drawBoxes(vctx, 1, 1, items);
+  const best = items.reduce((a, b) => (b.s > a.s ? b : a));
+  verdict(best.s, `（言葉 ${best.zs.toFixed(2)}・学習した層 ${best.probe.toFixed(2)}）`);
+}
+
+// ---------------- 動画（解析してから再生）・サンプル動画（事前計算）
+const video = $("video");
+function loadVideo(url) {
+  return new Promise((ok, ng) => { video.onloadeddata = () => ok(); video.onerror = () => ng(new Error("動画を開けませんでした")); video.src = url; video.load(); });
+}
+// 同じ位置へ移動すると seeked が来ないことがあるので、そのときは待たない。念のため 3 秒で先へ進む
+function seek(t) {
+  return new Promise((ok) => {
+    if (Math.abs(video.currentTime - t) < 1e-3 && video.readyState >= 2) { ok(); return; }
+    const timer = setTimeout(ok, 3000);
+    video.onseeked = () => { clearTimeout(timer); ok(); };
+    video.currentTime = t;
+  });
+}
+
+// 動き: 80 列の灰色の縮小画像の差。動いたマスにかかるタイルだけを判定する
+function grayGrid(c) {
+  const gw = 80, gh = Math.max(1, Math.round(80 * c.height / c.width));
+  const g = frameToCanvas(c, c.width, c.height, 80), d = g.getContext("2d").getImageData(0, 0, g.width, g.height).data;
+  const out = new Float32Array(g.width * g.height);
+  for (let i = 0; i < out.length; i++) out[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  return { w: g.width, h: g.height, v: out };
+}
+function movingBoxes(prev, cur, boxes, W, H) {
+  if (!prev) return boxes.map((_, k) => k);
+  const mov = cur.v.map((v, i) => Math.abs(v - prev.v[i]) > 18 ? 1 : 0);
+  const idx = [];
+  boxes.forEach((b, k) => {
+    if (k === 0) return;   // 画面全体は、どこかが動いたときだけ
+    const gx0 = Math.floor(b[0] / W * cur.w), gx1 = Math.ceil(b[2] / W * cur.w), gy0 = Math.floor(b[1] / H * cur.h), gy1 = Math.ceil(b[3] / H * cur.h);
+    let n = 0; for (let y = gy0; y < gy1; y++) for (let x = gx0; x < gx1; x++) n += mov[y * cur.w + x];
+    if (n >= 3) idx.push(k);
+  });
+  if (idx.length) idx.unshift(0);
+  return idx;
+}
+
+let timeline = null;   // { times:[t], items:[[{box,s}]], W, H }
+async function runVideo(url, precomputed) {
+  stopAll(); stopFlag = false; $("stopBtn").disabled = false; showCard();
+  await loadVideo(url);
+  const W0 = video.videoWidth, H0 = video.videoHeight;
+  $("vctl").style.display = "flex"; $("timeline").style.display = "block";
+  if (precomputed) {
+    const pj = await (await fetch(precomputed)).json();
+    const sc = Math.min(1, 1280 / Math.max(W0, H0));
+    timeline = { W: Math.round(W0 * sc), H: Math.round(H0 * sc), times: [], items: [] , pre: true };
+    for (const f of pj.frames) { timeline.times.push((f.frame - 1) / pj.fps); timeline.items.push(f.views.map((v) => ({ box: [v[0], v[1], v[2], v[3]], s: v[4] }))); }
+    $("vinfo").textContent = `C++ 版で ${pj.frames.length} コマ（${(pj.fps / pj.step).toFixed(1)} コマ/秒）を前もって全タイル判定した結果を重ねます`;
+  } else {
+    if (pool.ready < NW) { status("モデルの読み込みが終わるまでお待ちください"); return; }
+    const dur = video.duration, step = 0.5, n = Math.max(1, Math.floor(dur / step));
+    timeline = { times: [], items: [], W: 0, H: 0 };
+    let prev = null, boxes = null; const t0 = performance.now(); let evaluated = 0;
+    for (let i = 0; i < n; i++) {
+      if (stopFlag) return;
+      const t = i * step; await seek(t);
+      const c = frameToCanvas(video, W0, H0, 960);
+      if (!boxes) { boxes = await getViews(c.width, c.height); timeline.W = c.width; timeline.H = c.height; }
+      const cur = grayGrid(c), idx = movingBoxes(prev, cur, boxes, c.width, c.height); prev = cur;
+      let items = [];
+      if (idx.length) {
+        const rgba = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        const res = await evalBoxes(rgba, c.width, c.height, idx.map((k) => boxes[k]));
+        items = idx.map((k, m) => ({ box: boxes[k], s: res[m].s })); evaluated += idx.length;
+      }
+      timeline.times.push(t); timeline.items.push(items);
+      status(`動画を解析しています… ${i + 1} / ${n} コマ（動いたタイルだけ判定、計 ${evaluated} 枚）`);
+      drawTimeline();
+    }
+    $("vinfo").textContent = `0.5 秒おきに ${n} コマ、動いた部分のタイル計 ${evaluated} 枚を判定（${((performance.now() - t0) / 1000).toFixed(0)} 秒）`;
+    status("解析しました。再生すると、熊らしいタイルに枠が出ます。");
+  }
+  view.width = timeline.W; view.height = timeline.H;
+  await seek(0); drawVideoFrame(); drawTimeline(); summarizeVideo();
+}
+function frameAt(t) {
+  if (!timeline || !timeline.times.length) return -1;
+  let k = 0; while (k + 1 < timeline.times.length && timeline.times[k + 1] <= t + 1e-6) k++; return k;
+}
+function drawVideoFrame() {
+  vctx.drawImage(video, 0, 0, view.width, view.height);
+  const k = frameAt(video.currentTime); if (k < 0) return;
+  const sx = view.width / timeline.W, sy = view.height / timeline.H;
+  drawBoxes(vctx, sx, sy, timeline.items[k]);
+  drawTimeline(video.currentTime);
+}
+function summarizeVideo() {
+  const mx = timeline.items.map((it) => it.reduce((a, b) => Math.max(a, b.s), 0));
+  const hits = mx.filter((v) => v >= TH).length, best = Math.max(0, ...mx);
+  verdict(best, `。熊らしいタイルがあったコマ ${hits} / ${mx.length}`);
+}
+function drawTimeline(cur) {
+  const cv = $("timeline"), g = cv.getContext("2d"); if (!timeline) return;
+  const W = cv.width, H = cv.height, dur = video.duration || 1;
+  g.clearRect(0, 0, W, H);
+  const thY = H - TH * H; g.strokeStyle = "#ff2d55"; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(0, thY); g.lineTo(W, thY); g.stroke(); g.setLineDash([]);
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+  timeline.times.forEach((t, k) => {
+    const s = timeline.items[k].reduce((a, b) => Math.max(a, b.s), 0), x = t / dur * W;
+    g.fillStyle = s >= TH ? "#ff2d55" : accent; g.fillRect(x, H - s * H, Math.max(2, W / timeline.times.length - 1), s * H);
+  });
+  if (cur != null) { g.fillStyle = "#888"; g.fillRect(cur / dur * W - 1, 0, 2, H); }
+}
+$("timeline").onclick = async (e) => {
+  if (!timeline) return; const r = e.target.getBoundingClientRect();
+  await seek((e.clientX - r.left) / r.width * (video.duration || 0)); drawVideoFrame();
+};
+let raf = 0;
+$("playBtn").onclick = () => {
+  if (video.paused) { video.play(); $("playBtn").textContent = "一時停止"; const loop = () => { drawVideoFrame(); if (!video.paused && !video.ended) raf = requestAnimationFrame(loop); else $("playBtn").textContent = "再生"; }; loop(); }
+  else { video.pause(); $("playBtn").textContent = "再生"; }
+};
+
+// ---------------- カメラ（見張る）
+let stream = null, stopFlag = false;
+async function runCamera() {
+  stopAll(); if (pool.ready < NW) { status("モデルの読み込みが終わるまでお待ちください"); return; }
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); }
+  catch (err) { status("カメラを開けませんでした: " + err.message); return; }
+  video.srcObject = stream; await video.play(); stopFlag = false; $("stopBtn").disabled = false;
+  showCard(); $("vctl").style.display = "none"; $("timeline").style.display = "none";
+  let prev = null, boxes = null, streak = 0, n = 0;
+  while (!stopFlag) {
+    const c = frameToCanvas(video, video.videoWidth, video.videoHeight, 960);
+    if (!boxes) { boxes = await getViews(c.width, c.height); view.width = c.width; view.height = c.height; }
+    const cur = grayGrid(c), idx = movingBoxes(prev, cur, boxes, c.width, c.height); prev = cur;
+    let items = [];
+    if (idx.length) {
+      const rgba = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      const res = await evalBoxes(rgba, c.width, c.height, idx.map((k) => boxes[k]));
+      items = idx.map((k, m) => ({ box: boxes[k], s: res[m].s }));
+    }
+    if (stopFlag) break;
+    vctx.drawImage(c, 0, 0); drawBoxes(vctx, 1, 1, items);
+    const mx = items.reduce((a, b) => Math.max(a, b.s), 0);
+    streak = mx >= TH ? streak + 1 : 0; n++;
+    verdict(mx, idx.length ? `（動いたタイル ${idx.length} 枚を判定）` : "（動きなし）");
+    if (streak >= 2) { $("verdict").textContent = "熊がいるかもしれません（2 回続けて）"; }
+    status(`見張っています… ${n} 回目`);
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+function stopAll() {
+  stopFlag = true; cancelAnimationFrame(raf);
+  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; video.srcObject = null; }
+  video.pause(); $("stopBtn").disabled = true; timeline = null;
+}
+$("stopBtn").onclick = () => { stopAll(); status("止めました"); };
+
+// ---------------- 入力
+$("filePhoto").onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try { const b = await createImageBitmap(f, { imageOrientation: "from-image" }); runPhoto(b, b.width, b.height); }
+  catch (err) { status("この画像は読めませんでした: " + err); }
+};
+$("fileVideo").onchange = (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  stopFlag = false; runVideo(URL.createObjectURL(f)).catch((err) => status("エラー: " + err.message));
+};
+$("camBtn").onclick = () => runCamera();
+$("th").oninput = () => {
+  TH = +$("th").value; $("thv").textContent = TH.toFixed(2);
+  if (shown && shown.kind === "photo") renderPhoto();
+  else if (timeline) { drawVideoFrame(); summarizeVideo(); }
+};
+
+const SAMPLES = [
+  { kind: "photo", src: "samples/surveillance_0234.jpg", label: "玄関カメラ（夜、熊）" },
+  { kind: "photo", src: "samples/surveillance_0500.jpg", label: "玄関カメラ（車だけ）" },
+  { kind: "photo", src: "samples/library_0620.jpg", label: "図書館（熊）" },
+  { kind: "video", src: "samples/surveillance.mp4", pre: "samples/surveillance_scores.json", thumb: "samples/surveillance_0234.jpg", label: "動画：玄関カメラ" },
+  { kind: "video", src: "samples/library.mp4", pre: "samples/library_scores.json", thumb: "samples/library_0620.jpg", label: "動画：図書館" },
+];
+for (const s of SAMPLES) {
+  const b = document.createElement("button");
+  b.innerHTML = `<img alt=""><span></span>`; b.querySelector("img").src = s.thumb || s.src; b.querySelector("span").textContent = s.label;
+  b.onclick = async () => {
+    if (s.kind === "photo") { const im = await createImageBitmap(await (await fetch(s.src)).blob()); runPhoto(im, im.width, im.height); }
+    else { stopFlag = false; shown = null; runVideo(s.src, s.pre).catch((err) => status("エラー: " + err.message)); }
+  };
+  $("samples").appendChild(b);
+}
+startPool();
+</script>
+</body>
+</html>
